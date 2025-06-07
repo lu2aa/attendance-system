@@ -1,32 +1,27 @@
 import { useEffect } from 'react'
-     import { useSupabaseClient, useSession } from '@supabase/ssr'
      import Link from 'next/link'
      import { useRouter } from 'next/router'
 
-     export default function Dashboard() {
-       const supabase = useSupabaseClient()
-       const session = useSession()
+     export default function Dashboard({ supabaseClient }) {
        const router = useRouter()
 
        useEffect(() => {
-         if (!session) {
-           router.push('/signin')
-         }
-       }, [session, router])
+         supabaseClient.auth.getSession().then(({ data: { session } }) => {
+           if (!session) {
+             router.push('/signin')
+           }
+         })
+       }, [supabaseClient, router])
 
        const handleLogout = async () => {
          try {
-           const { error } = await supabase.auth.signOut()
+           const { error } = await supabaseClient.auth.signOut()
            if (error) throw error
            router.push('/')
          } catch (error) {
            console.error('Logout error:', error.message)
            alert('فشل تسجيل الخروج: ' + error.message)
          }
-       }
-
-       if (!session) {
-         return <div className="container mx-auto p-6 text-center text-gray-600 animate-pulse">جارٍ التحقق...</div>
        }
 
        return (

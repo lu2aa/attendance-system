@@ -1,19 +1,17 @@
 import { useState } from 'react'
-     import { useSupabaseClient } from '@supabase/ssr'
      import Link from 'next/link'
 
-     export default function SignUp() {
+     export default function SignUp({ supabaseClient }) {
        const [email, setEmail] = useState('')
        const [password, setPassword] = useState('')
        const [error, setError] = useState(null)
        const [loading, setLoading] = useState(false)
-       const supabase = useSupabaseClient()
 
        const handleSignUp = async (e) => {
          e.preventDefault()
          setLoading(true)
          try {
-           const { error } = await supabase.auth.signUp({ email, password })
+           const { error } = await supabaseClient.auth.signUp({ email, password })
            if (error) throw error
            alert('تم إنشاء الحساب! تحقق من بريدك الإلكتروني لتأكيد الحساب.')
            setEmail('')

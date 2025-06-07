@@ -1,19 +1,17 @@
 import { useState } from 'react'
-     import { useSupabaseClient } from '@supabase/ssr'
      import Link from 'next/link'
 
-     export default function SignIn() {
+     export default function SignIn({ supabaseClient }) {
        const [email, setEmail] = useState('')
        const [password, setPassword] = useState('')
        const [error, setError] = useState(null)
        const [loading, setLoading] = useState(false)
-       const supabase = useSupabaseClient()
 
        const handleSignIn = async (e) => {
          e.preventDefault()
          setLoading(true)
          try {
-           const { error } = await supabase.auth.signInWithPassword({ email, password })
+           const { error } = await supabaseClient.auth.signInWithPassword({ email, password })
            if (error) throw error
            window.location.href = '/dashboard'
          } catch (err) {
