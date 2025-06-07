@@ -1,6 +1,7 @@
 import '../styles/globals.css'
      import { useState } from 'react'
      import { createClient } from '@supabase/supabase-js'
+     import Navbar from '../components/Navbar'
 
      export default function MyApp({ Component, pageProps }) {
        const [supabaseClient] = useState(() =>
@@ -9,5 +10,11 @@ import '../styles/globals.css'
            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
          )
        )
-       return <Component {...pageProps} supabaseClient={supabaseClient} />
+
+       return (
+         <>
+           <Navbar supabaseClient={supabaseClient} />
+           <Component {...pageProps} supabaseClient={supabaseClient} />
+         </>
+       )
      }
