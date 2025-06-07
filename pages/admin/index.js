@@ -2,8 +2,8 @@ import Link from 'next/link';
 
 export default function AdminDashboard() {
   return (
-    <div className="container mx-auto p-6 bg-gray-100 min-h-screen" dir="rtl">
-      <h1 className="text-4xl font-bold text-gray-900 mb-8 text-center">لوحة التحكم</h1>
+    <div className="container mx-auto p-8 bg-gray-50 min-h-screen" dir="rtl">
+      <h1 className="text-4xl font-bold text-gray-800 mb-8 text-center">لوحة التحكم</h1>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <Link href="/admin/upload?tab=attendance">
           <button className="w-full py-6 text-xl font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-md transition duration-200">

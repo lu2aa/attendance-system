@@ -32,12 +32,12 @@ export default function MonthlyReport({ supabaseClient }) {
   }, [supabaseClient]);
 
   return (
-    <div className="container mx-auto p-6 bg-gray-100 min-h-screen" dir="rtl">
-      <h1 className="text-4xl font-bold text-gray-900 mb-8 text-center">تقرير شهري</h1>
+    <div className="container mx-auto p-8 bg-gray-50 min-h-screen" dir="rtl">
+      <h1 className="text-4xl font-bold text-gray-800 mb-6 text-center">تقرير شهري</h1>
       <Link href="/admin" className="inline-block mb-4 text-blue-600 hover:underline text-lg">
         العودة إلى لوحة التحكم
       </Link>
-      {error && <p className="text-red-600 text-center mb-4 font-semibold text-lg">{error}</p>}
+      {error && <p className="text-red-600 text-center mb-6 text-lg font-semibold">{error}</p>}
       {loading ? (
         <p className="text-center text-gray-700 text-lg">جارٍ التحميل...</p>
       ) : (

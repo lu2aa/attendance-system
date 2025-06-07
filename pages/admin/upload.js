@@ -39,7 +39,7 @@ export default function AdminUpload({ supabaseClient }) {
           let jsonData;
           const fileType = file.name.split('.').pop()?.toLowerCase();
           
-          if (fileType === 'csv') {
+          if (fileType === 'csv' && activeTab === 'attendance') {
             const text = event.target.result;
             const workbook = XLSX.read(text, { type: 'string', raw: true });
             const sheetName = workbook.SheetNames[0];
@@ -52,10 +52,10 @@ export default function AdminUpload({ supabaseClient }) {
             const sheet = workbook.Sheets[sheetName];
             jsonData = XLSX.utils.sheet_to_json(sheet);
           } else {
-            throw new Error('نوع الملف غير مدعوم: يرجى رفع ملف XLS, XLSX, أو CSV');
+            throw new Error('نوع الملف غير مدعوم: استخدم XLS/XLSX لجميع الجداول عدا الحركات (CSV)');
           }
 
-          if (!jsonData.length || jsonData.length === 0) {
+          if (!jsonData.length) {
             throw new Error('الملف فارغ أو لا يحتوي على بيانات صالحة');
           }
 
@@ -107,42 +107,40 @@ export default function AdminUpload({ supabaseClient }) {
               }
               break;
 
-        case 'evaluation':
-  table = 'evaluation';
-  expectedHeaders = [
-    'رقم الموظف', 'اسم الموظف', 'المسمى الوظيفي', 'أيام الحضور', 'ساعات العمل',
-    'إجازة عادية', 'إجازة عارضة', 'دقائق التأخير', 'التقييم الشهري', 'تاريخ التقييم'
-  ];
-  dataToInsert = jsonData.map(row => ({
-    id: uuidv4(),
-    employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
-    employeename: row['اسم الموظف']?.toString()?.trim() || '',
-    jobtitle: row['المسمى الوظيفي']?.toString()?.trim() || '',
-    presentdays: parseInt(row['أيام الحضور']) || null,
-    workhours: parseInt(row['ساعات العمل']) || null,
-    regularleave: parseInt(row['إجازة عادية']) || null,
-    casualleave: parseInt(row['إجازة عارضة']) || null,
-    lateminutes: parseInt(row['دقائق التأخير']) || null,
-    monthlyevaluation: parseInt(row['التقييم الشهري']) || null,
-    evaluation_date: row['تاريخ التقييم']?.toString()?.trim() || null
-  }));
-  for (const evalData of dataToInsert) {
-    if (!evalData.employeenumber || !evalData.employeename) {
-      throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${evalData.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف والاسم`);
-    }
-    if (evalData.evaluation_date && !/^\d{4}-\d{2}-\d{2}$/.test(evalData.evaluation_date)) {
-      throw new Error(`تاريخ التقييم غير صالح: ${evalData.evaluation_date}، يجب أن يكون بصيغة YYYY-MM-DD`);
-    }
-    const { data: employee, error: empError } = await supabaseClient
-      .from('employees')
-      .select('employeenumber')
-      .eq('employeenumber', evalData.employeenumber)
-      .single();
-    if (empError || !employee) {
-      throw new Error(`رقم الموظف ${evalData.employeenumber} غير موجود في جدول الموظفين`);
-    }
-  }
-  break;
+            case 'evaluation':
+              table = 'evaluation';
+              expectedHeaders = [
+                'رقم الموظف', 'اسم الموظف', 'المسمى الوظيفي', 'أيام الحضور', 'ساعات العمل',
+                'إجازة عادية', 'إجازة عارضة', 'دقائق التأخير', 'التقييم الشهري', 'الطابع الزمني'
+              ];
+              dataToInsert = jsonData.map(row => ({
+                id: uuidv4(),
+                employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
+                employeename: row['اسم الموظف']?.toString()?.trim() || '',
+                jobtitle: row['المسمى الوظيفي']?.toString()?.trim() || '',
+                presentdays: parseInt(row['أيام الحضور']) || null,
+                workhours: parseInt(row['ساعات العمل']) || null,
+                regularleave: parseInt(row['إجازة عادية']) || null,
+                casualleave: parseInt(row['إجازة عارضة']) || null,
+                lateminutes: parseInt(row['دقائق التأخير']) || null,
+                monthlyevaluation: parseInt(row['التقييم الشهري']) || null,
+                timestamp: row['الطابع الزمني']?.toString()?.trim() || null
+              }));
+              for (const evalData of dataToInsert) {
+                if (!evalData.employeenumber || !evalData.employeename) {
+                  throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${evalData.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف والاسم`);
+                }
+                const { data: employee, error: empError } = await supabaseClient
+                  .from('employees')
+                  .select('employeenumber')
+                  .eq('employeenumber', evalData.employeenumber)
+                  .single();
+                if (empError || !employee) {
+                  throw new Error(`رقم الموظف ${evalData.employeenumber} غير موجود في جدول الموظفين`);
+                }
+              }
+              break;
+
             case 'requests':
               table = 'requests';
               expectedHeaders = [
@@ -279,7 +277,6 @@ export default function AdminUpload({ supabaseClient }) {
             .insert(dataToInsert);
 
           if (insertError) {
-            console.error('Supabase insert error:', insertError);
             throw new Error(`فشل في رفع البيانات: ${insertError.message}`);
           }
 
@@ -297,92 +294,76 @@ export default function AdminUpload({ supabaseClient }) {
         setError('حدث خطأ أثناء قراءة الملف');
         setLoading(false);
       };
-      const fileType = file.name.split('.').pop()?.toLowerCase();
-      if (fileType === 'csv') {
+      if (fileType === 'csv' && activeTab === 'attendance') {
         reader.readAsText(file, 'UTF-8');
       } else {
         reader.readAsArrayBuffer(file);
       }
     } catch (err) {
       setError(err.message || 'فشل في رفع البيانات');
-      console.error('Upload error:', err);
       setLoading(false);
     }
   };
 
+  const getTemplateExtension = () => activeTab === 'attendance' ? '.csv' : '.xlsx';
+
   return (
-    <div className="container mx-auto p-6 bg-gray-100 min-h-screen" dir="rtl">
-      <h1 className="text-3xl font-bold text-gray-900 mb-6 text-center">لوحة التحكم - رفع البيانات</h1>
-      <Link href="/admin" className="inline-block mb-4 text-blue-600 hover:underline">
+    <div className="container mx-auto p-8 bg-gray-50 min-h-screen" dir="rtl">
+      <h1 className="text-4xl font-bold text-gray-800 mb-8 text-center">رفع البيانات</h1>
+      <Link href="/admin" className="inline-block mb-6 text-blue-600 hover:underline text-lg">
         العودة إلى لوحة التحكم
       </Link>
-      <div className="mb-6">
-        <div className="flex border-b border-gray-300">
-          <button
-            className={`flex-1 py-2 px-4 text-center font-semibold rounded-t-md transition duration-200 ${activeTab === 'employees' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            onClick={() => setActiveTab('employees')}
-          >
-            الموظفين
-          </button>
-          <button
-            className={`flex-1 py-2 px-4 text-center font-semibold rounded-t-md transition duration-200 ${activeTab === 'attendance' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            onClick={() => setActiveTab('attendance')}
-          >
-            الحركات
-          </button>
-          <button
-            className={`flex-1 py-2 px-4 text-center font-semibold rounded-t-md transition duration-200 ${activeTab === 'schedule' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            onClick={() => setActiveTab('schedule')}
-          >
-            الجداول
-          </button>
-          <button
-            className={`flex-1 py-2 px-4 text-center font-semibold rounded-t-md transition duration-200 ${activeTab === 'requests' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            onClick={() => setActiveTab('requests')}
-          >
-            الطلبات
-          </button>
-          <button
-            className={`flex-1 py-2 px-4 text-center font-semibold rounded-t-md transition duration-200 ${activeTab === 'evaluation' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            onClick={() => setActiveTab('evaluation')}
-          >
-            التقييمات
-          </button>
+      <div className="mb-8 bg-white p-6 rounded-lg shadow-md">
+        <div className="flex flex-wrap gap-2 border-b border-gray-200">
+          {[
+            { id: 'employees', label: 'الموظفين', color: 'blue' },
+            { id: 'attendance', label: 'الحركات', color: 'green' },
+            { id: 'schedule', label: 'الجداول', color: 'purple' },
+            { id: 'requests', label: 'الطلبات', color: 'orange' },
+            { id: 'evaluation', label: 'التقييمات', color: 'teal' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              className={`flex-1 py-3 px-4 text-center text-lg font-semibold rounded-t-lg transition duration-200 ${
+                activeTab === tab.id
+                  ? `bg-${tab.color}-600 text-white`
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
-      {error && <p className="text-red-600 text-center mb-4 font-semibold">{error}</p>}
-      {success && <p className="text-green-600 text-center mb-4 font-semibold">{success}</p>}
-      <form onSubmit={handleUpload} className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
-        <div className="mb-4">
-          <label className="block text-sm font-semibold text-gray-700 mb-1">اختر ملف Excel أو CSV</label>
+      {error && <p className="text-red-600 text-center mb-6 text-lg font-semibold">{error}</p>}
+      {success && <p className="text-green-600 text-center mb-6 text-lg font-semibold">{success}</p>}
+      <form onSubmit={handleUpload} className="max-w-lg mx-auto bg-white p-8 rounded-lg shadow-md">
+        <div className="mb-6">
+          <label className="block text-lg font-semibold text-gray-700 mb-2">
+            اختر ملف {activeTab === 'attendance' ? 'CSV' : 'Excel'}
+          </label>
           <input
             type="file"
-            accept=".xlsx, .xls, .csv"
+            accept={activeTab === 'attendance' ? '.csv' : '.xlsx, .xls'}
             onChange={handleFileChange}
-            className="w-full border p-2 rounded-md text-sm text-gray-700"
+            className="w-full border-2 border-gray-300 p-3 rounded-lg text-lg text-gray-700 focus:border-blue-600 focus:outline-none"
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-sm text-gray-500 mt-2">
             الملف يجب أن يحتوي على الأعمدة المناسبة لجدول {activeTab === 'employees' ? 'الموظفين' : activeTab === 'attendance' ? 'الحركات' : activeTab === 'schedule' ? 'الجداول' : activeTab === 'requests' ? 'الطلبات' : 'التقييمات'}
           </p>
           <a
-            href={`/templates/${activeTab}_template.csv`}
-            className="text-blue-600 hover:underline text-xs mr-2"
+            href={`/templates/${activeTab}_template${getTemplateExtension()}`}
+            className="inline-block mt-2 text-blue-600 hover:underline text-lg"
             download
           >
-            تحميل قالب CSV
-          </a>
-          <a
-            href={`/templates/${activeTab}_template.xlsx`}
-            className="text-blue-600 hover:underline text-xs"
-            download
-          >
-            تحميل قالب Excel
+            تحميل قالب {activeTab === 'attendance' ? 'CSV' : 'Excel'}
           </a>
         </div>
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="w-full py-4 text-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           {loading ? 'جارٍ الرفع...' : 'رفع الملف'}
         </button>
