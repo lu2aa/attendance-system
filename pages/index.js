@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { supabase } from '../lib/supabaseClient'; // Adjust path if needed
+import { supabase } from '../lib/supabaseClient';
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -26,6 +26,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-100" dir="rtl">
+      <div className="bg-blue-600 text-white p-4 text-center">Test Tailwind Colors</div>
       <div className="container mx-auto p-8">
         <h1 className="text-4xl font-bold text-gray-800 text-center mb-8">
           مرحبًا بك في نظام الحضور
@@ -33,7 +34,6 @@ export default function Home() {
         <p className="text-lg text-gray-600 text-center mb-12">
           إدارة الحضور، التقارير، والبيانات بسهولة وكفاءة
         </p>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {user ? (
             <>

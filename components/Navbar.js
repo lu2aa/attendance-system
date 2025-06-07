@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { supabase } from '../lib/supabaseClient'; // Ensure this path is correct
+import { supabase } from '../lib/supabaseClient';
 
 export default function Navbar() {
   const [user, setUser] = useState(null);
