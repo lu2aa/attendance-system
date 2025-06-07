@@ -1,200 +1,114 @@
-import Link from 'next/link'
-     import { useRouter } from 'next/router'
-     import { useState } from 'react'
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { isAdmin } from '../lib/auth';
 
-     export default function Navbar({ supabaseClient }) {
-       const router = useRouter()
-       const [isMenuOpen, setIsMenuOpen] = useState(false)
+export default function Navbar({ supabaseClient }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  const router = useRouter();
 
-       const handleLogout = async () => {
-         try {
-           const { error } = await supabaseClient.auth.signOut()
-           if (error) throw error
-           router.push('/')
-         } catch (error) {
-           console.error('Logout error:', error.message)
-           alert('فشل تسجيل الخروج: ' + error.message)
-         }
-       }
+  useEffect(() => {
+    async function checkAdmin() {
+      try {
+        const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+        if (sessionError) {
+          console.error('Session error:', sessionError);
+          setIsAdminUser(false);
+          return;
+        }
+        if (!session) {
+          setIsAdminUser(false);
+          router.push('/signin');
+          return;
+        }
+        const adminStatus = await isAdmin(supabaseClient, session.user.email);
+        setIsAdminUser(adminStatus);
+      } catch (error) {
+        console.error('Error checking admin:', error);
+        setIsAdminUser(false);
+      }
+    }
+    checkAdmin();
+  }, [supabaseClient, router]);
 
-       return (
-         <nav className="bg-gradient-to-r from-blue-900 to-blue-700 text-white shadow-lg" dir="rtl">
-           <div className="container mx-auto px-4 py-4">
-             <div className="flex justify-between items-center">
-               <div className="text-2xl font-bold">
-                 <Link href="/" className="hover:text-blue-200 transition duration-300">
-                   مركز غرب المطار
-                 </Link>
-               </div>
-               {/* Desktop Menu */}
-               <ul className="hidden md:flex space-x-6 space-x-reverse items-center">
-                 <li>
-                   <Link
-                     href="/"
-                     className={`px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname === '/' ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                   >
-                     الرئيسية
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/dashboard"
-                     className={`px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname === '/dashboard' ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                   >
-                     لوحة التحكم
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/about"
-                     className={`px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname === '/about' ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                   >
-                     حول
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/employees"
-                     className={`px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname.startsWith('/employees') ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                   >
-                     الموظفون
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/evaluation"
-                     className={`px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname.startsWith('/evaluation') ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                   >
-                     التقييمات
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/profile"
-                     className={`px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname === '/profile' ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                   >
-                     الملف الشخصي
-                   </Link>
-                 </li>
-                 <li>
-                   <button
-                     onClick={handleLogout}
-                     className="px-3 py-2 rounded-md bg-red-600 hover:bg-red-700 transition duration-300"
-                   >
-                     تسجيل الخروج
-                   </button>
-                 </li>
-               </ul>
-               {/* Mobile Menu Button */}
-               <button
-                 className="md:hidden text-white focus:outline-none"
-                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-               >
-                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                   <path
-                     strokeLinecap="round"
-                     strokeLinejoin="round"
-                     strokeWidth="2"
-                     d={isMenuOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'}
-                   />
-                 </svg>
-               </button>
-             </div>
-             {/* Mobile Menu */}
-             {isMenuOpen && (
-               <ul className="md:hidden flex flex-col mt-4 space-y-2">
-                 <li>
-                   <Link
-                     href="/"
-                     className={`block px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname === '/' ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                     onClick={() => setIsMenuOpen(false)}
-                   >
-                     الرئيسية
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/dashboard"
-                     className={`block px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname === '/dashboard' ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                     onClick={() => setIsMenuOpen(false)}
-                   >
-                     لوحة التحكم
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/about"
-                     className={`block px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname === '/about' ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                     onClick={() => setIsMenuOpen(false)}
-                   >
-                     حول
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/employees"
-                     className={`block px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname.startsWith('/employees') ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                     onClick={() => setIsMenuOpen(false)}
-                   >
-                     الموظفون
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/evaluation"
-                     className={`block px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname.startsWith('/evaluation') ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                     onClick={() => setIsMenuOpen(false)}
-                   >
-                     التقييمات
-                   </Link>
-                 </li>
-                 <li>
-                   <Link
-                     href="/profile"
-                     className={`block px-3 py-2 rounded-md hover:bg-blue-600 hover:text-white transition duration-300 ${
-                       router.pathname === '/profile' ? 'bg-blue-600 font-bold' : ''
-                     }`}
-                     onClick={() => setIsMenuOpen(false)}
-                   >
-                     الملف الشخصي
-                   </Link>
-                 </li>
-                 <li>
-                   <button
-                     onClick={() => {
-                       handleLogout()
-                       setIsMenuOpen(false)
-                     }}
-                     className="w-full text-right px-3 py-2 rounded-md bg-red-600 hover:bg-red-700 transition duration-300"
-                   >
-                     تسجيل الخروج
-                   </button>
-                 </li>
-               </ul>
-             )}
-           </div>
-         </nav>
-       )
-     }
+  const handleSignOut = async () => {
+    try {
+      await supabaseClient.auth.signOut();
+      router.push('/signin');
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
+  };
+
+  return (
+    <nav className="bg-blue-700 shadow-lg" dir="rtl">
+      <div className="container mx-auto px-4">
+        <div className="flex justify-between items-center py-4">
+          <Link href="/" className="text-white text-2xl font-bold">
+            نظام الحضور
+          </Link>
+          <button
+            className="text-white md:hidden focus:outline-none"
+            onClick={() => setIsOpen(!isOpen)}
+            aria-label="Toggle navigation"
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" />
+            </svg>
+          </button>
+          <div
+            className={`md:flex md:items-center ${isOpen ? 'block' : 'hidden'} w-full md:w-auto mt-4 md:mt-0`}
+          >
+            <Link href="/" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+              الرئيسية
+            </Link>
+            <Link href="/about" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+              حول
+            </Link>
+            <Link href="/profile" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+              الملف الشخصي
+            </Link>
+            {isAdminUser && (
+              <>
+                <Link href="/admin" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+                  لوحة التحكم
+                </Link>
+                <Link href="/admin/upload?tab=attendance" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+                  رفع الحركات
+                </Link>
+                <Link href="/admin/upload?tab=employees" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+                  رفع بيانات الموظفين
+                </Link>
+                <Link href="/admin/upload?tab=schedule" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+                  رفع الجداول
+                </Link>
+                <Link href="/admin/upload?tab=requests" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+                  رفع الطلبات
+                </Link>
+                <Link href="/admin/upload?tab=evaluation" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+                  رفع التقييمات
+                </Link>
+                <Link href="/reports/monthly" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+                  تقرير شهري
+                </Link>
+                <Link href="/reports/employee" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+                  تقرير موظف
+                </Link>
+                <Link href="/reports/send-email" className="block md:inline-block text-white px-4 py-2 text-lg hover:bg-blue-800 rounded-md">
+                  إرسال تقرير عبر الإيميل
+                </Link>
+              </>
+            )}
+            <button
+              onClick={handleSignOut}
+              className="block md:inline-block text-white px-4 py-2 text-lg bg-red-600 hover:bg-red-700 rounded-md"
+            >
+              تسجيل الخروج
+            </button>
+          </div>
+        </div>
+      </div>
+    </nav>
+  );
+}
