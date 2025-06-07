@@ -33,12 +33,11 @@ export default function AdminUpload({ supabaseClient }) {
     }
     setLoading(true);
     try {
+      const fileType = file.name.split('.').pop()?.toLowerCase();
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
           let jsonData;
-          const fileType = file.name.split('.').pop()?.toLowerCase();
-          
           if (fileType === 'csv' && activeTab === 'attendance') {
             const text = event.target.result;
             const workbook = XLSX.read(text, { type: 'string', raw: true });
@@ -274,7 +273,9 @@ export default function AdminUpload({ supabaseClient }) {
 
           const { error: insertError } = await supabaseClient
             .from(table)
-            .insert(dataToInsert);
+            .upsert(table === 'employees' ? dataToInsert : dataToInsert, {
+              onConflict: table === 'employees' ? 'employeenumber' : undefined
+            });
 
           if (insertError) {
             throw new Error(`فشل في رفع البيانات: ${insertError.message}`);
@@ -301,6 +302,7 @@ export default function AdminUpload({ supabaseClient }) {
       }
     } catch (err) {
       setError(err.message || 'فشل في رفع البيانات');
+      console.error('Upload error:', err);
       setLoading(false);
     }
   };

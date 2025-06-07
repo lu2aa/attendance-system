@@ -93,6 +93,9 @@ export default function Navbar({ supabaseClient }) {
                 <Link href="/reports/send-email" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
                   إرسال تقرير عبر الإيميل
                 </Link>
+                <Link href="/reports/send-email" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
+  إرسال تقرير عبر الإيميل
+</Link>
               </>
             )}
             <button
