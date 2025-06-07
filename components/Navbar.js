@@ -133,8 +133,7 @@ export default function Navbar() {
                 </Link>
                 <button
                   onClick={handleSignOut}
-                  className="px-4 py-2 text-lg bg-red-600 hover:bg-red-700 rounded-lg"
-                >
+                  className="px-4 py-2 text-lg bg-red-600 hover:bg-red-700 rounded-lg">
                   تسجيل الخروج
                 </button>
               </>
