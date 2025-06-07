@@ -1,112 +1,156 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { isAdmin } from '../lib/auth';
+import { supabase } from '../lib/supabaseClient'; // Ensure this path is correct
 
-export default function Navbar({ supabaseClient }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isAdminUser, setIsAdminUser] = useState(false);
+export default function Navbar() {
+  const [user, setUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    async function checkAdmin() {
-      try {
-        const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
-        if (sessionError || !session) {
-          setIsAdminUser(false);
-          router.push('/signin');
-          return;
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      if (user) {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .single();
+        if (!error && profile?.is_admin) {
+          setIsAdmin(true);
         }
-        const adminStatus = await isAdmin(supabaseClient, session.user.email);
-        setIsAdminUser(adminStatus);
-      } catch (error) {
-        console.error('Error checking admin:', error);
-        setIsAdminUser(false);
       }
-    }
-    checkAdmin();
-  }, [supabaseClient, router]);
+    };
+    checkUser();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        checkUser();
+      } else {
+        setIsAdmin(false);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   const handleSignOut = async () => {
-    try {
-      await supabaseClient.auth.signOut();
-      router.push('/signin');
-    } catch (error) {
-      console.error('Sign out error:', error);
-    }
+    await supabase.auth.signOut();
+    router.push('/signin');
   };
 
+  const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
+
   return (
-    <nav className="bg-blue-800 shadow-xl" dir="rtl">
-      <div className="container mx-auto px-6">
-        <div className="flex justify-between items-center py-4">
-          <Link href="/" className="text-white text-3xl font-bold">
-            نظام الحضور
-          </Link>
-          <button
-            className="text-white md:hidden focus:outline-none"
-            onClick={() => setIsOpen(!isOpen)}
-            aria-label="Toggle navigation"
-          >
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" />
-            </svg>
-          </button>
-          <div
-            className={`md:flex md:items-center ${isOpen ? 'block' : 'hidden'} w-full md:w-auto mt-4 md:mt-0`}
-          >
-            <Link href="/" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-              الرئيسية
-            </Link>
-            <Link href="/about" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-              حول
-            </Link>
-            <Link href="/profile" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-              الملف الشخصي
-            </Link>
-            {isAdminUser && (
-              <>
-                <Link href="/admin" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-                  لوحة التحكم
-                </Link>
-                <Link href="/admin/upload?tab=attendance" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-                  رفع الحركات
-                </Link>
-                <Link href="/admin/upload?tab=employees" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-                  رفع بيانات الموظفين
-                </Link>
-                <Link href="/admin/upload?tab=schedule" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-                  رفع الجداول
-                </Link>
-                <Link href="/admin/upload?tab=requests" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-                  رفع الطلبات
-                </Link>
-                <Link href="/admin/upload?tab=evaluation" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-                  رفع التقييمات
-                </Link>
-                <Link href="/reports/monthly" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-                  تقرير شهري
-                </Link>
-                <Link href="/reports/employee" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-                  تقرير موظف
-                </Link>
-                <Link href="/reports/send-email" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-                  إرسال تقرير عبر الإيميل
-                </Link>
-                <Link href="/reports/send-email" className="block md:inline-block text-white px-4 py-3 text-xl hover:bg-blue-900 rounded-lg">
-  إرسال تقرير عبر الإيميل
-</Link>
-              </>
-            )}
-            <button
-              onClick={handleSignOut}
-              className="block md:inline-block text-white px-4 py-3 text-xl bg-red-600 hover:bg-red-700 rounded-lg"
-            >
-              تسجيل الخروج
-            </button>
-          </div>
+    <nav className="bg-blue-800 text-white shadow-lg" dir="rtl">
+      <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+        <Link href="/" className="text-2xl font-bold">
+          نظام الحضور
+        </Link>
+        <button className="md:hidden text-white focus:outline-none" onClick={toggleMenu}>
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div className="hidden md:flex items-center space-x-4 space-x-reverse">
+          {user ? (
+            <>
+              {isAdmin && (
+                <>
+                  <div className="relative group">
+                    <button className="px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
+                      التقارير
+                    </button>
+                    <div className="absolute hidden group-hover:block bg-blue-800 rounded-lg shadow-lg mt-2">
+                      <Link href="/reports/send-email" className="block px-4 py-2 text-lg hover:bg-blue-700">
+                        إرسال تقرير عبر الإيميل
+                      </Link>
+                      <Link href="/reports/employee" className="block px-4 py-2 text-lg hover:bg-blue-700">
+                        تقرير الموظف
+                      </Link>
+                    </div>
+                  </div>
+                  <Link href="/admin/upload" className="px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
+                    رفع البيانات
+                  </Link>
+                </>
+              )}
+              <Link href="/profile" className="px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
+                الملف الشخصي
+              </Link>
+              <button
+                onClick={handleSignOut}
+                className="px-4 py-2 text-lg bg-red-600 hover:bg-red-700 rounded-lg"
+              >
+                تسجيل الخروج
+              </button>
+            </>
+          ) : (
+            <>
+              <Link href="/signin" className="px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
+                تسجيل الدخول
+              </Link>
+              <Link href="/signup" className="px-4 py-2 text-lg bg-green-600 hover:bg-green-700 rounded-lg">
+                إنشاء حساب
+              </Link>
+            </>
+          )}
         </div>
       </div>
+      {isMenuOpen && (
+        <div className="md:hidden bg-blue-800">
+          <div className="flex flex-col space-y-2 px-4 py-4">
+            {user ? (
+              <>
+                {isAdmin && (
+                  <>
+                    <div>
+                      <button className="w-full text-right px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
+                        التقارير
+                      </button>
+                      <div className="pr-8">
+                        <Link href="/reports/send-email" className="block px-4 py-2 text-lg hover:bg-blue-700">
+                          إرسال تقرير عبر الإيميل
+                        </Link>
+                        <Link href="/reports/employee" className="block px-4 py-2 text-lg hover:bg-blue-700">
+                          تقرير الموظف
+                        </Link>
+                      </div>
+                    </div>
+                    <Link href="/admin/upload" className="px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
+                      رفع البيانات
+                    </Link>
+                  </>
+                )}
+                <Link href="/profile" className="px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
+                  الملف الشخصي
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  className="px-4 py-2 text-lg bg-red-600 hover:bg-red-700 rounded-lg"
+                >
+                  تسجيل الخروج
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/signin" className="px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
+                  تسجيل الدخول
+                </Link>
+                <Link href="/signup" className="px-4 py-2 text-lg bg-green-600 hover:bg-green-700 rounded-lg">
+                  إنشاء حساب
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

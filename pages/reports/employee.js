@@ -1,26 +1,24 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-export default function SendEmailReport({ supabaseClient }) {
+export default function EmployeeReport({ supabaseClient }) {
   const [employees, setEmployees] = useState([]);
-  const [selectedEmails, setSelectedEmails] = useState([]);
-  const [month, setMonth] = useState('2025-06');
-  const [subject, setSubject] = useState(`تقرير التقييم الشهري لشهر ${month}`);
-  const [message, setMessage] = useState('');
+  const [selectedEmployee, setSelectedEmployee] = useState('');
+  const [month, setMonthYear] = useState('');
+  const [employeeData, setEmployeeData] = useState(null);
+  const [attendanceData, setAttendanceData] = useState([]);
+  const [evaluationData, setEvaluationData] = useState([]);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     async function fetchEmployees() {
       try {
-        const { data: empData, error: empError } = await supabaseClient
+        const { data, error } = await supabaseClient
           .from('employees')
-          .select('employeenumber, employeename, email');
-        if (empError) {
-          throw new Error(`فشل في جلب الموظفين: ${empError.message}`);
-        }
-        setEmployees(empData);
+          .select('employeenumber, employeename');
+        if (error) throw new Error(`فشل في جلب الموظفين: ${error.message}`);
+        setEmployees(data);
       } catch (err) {
         setError(err.message);
         console.error('Error fetching employees:', err);
@@ -29,94 +27,64 @@ export default function SendEmailReport({ supabaseClient }) {
     fetchEmployees();
   }, [supabaseClient]);
 
-  useEffect(() => {
-    setSubject(`تقرير التقييم الشهري لشهر ${month}`);
-  }, [month]);
-
-  const handleEmailSelect = (email) => {
-    setSelectedEmails((prev) =>
-      prev.includes(email)
-        ? prev.filter((e) => e !== email)
-        : [...prev, email]
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (selectedEmails.length === employees.length) {
-      setSelectedEmails([]);
-    } else {
-      setSelectedEmails(employees.map((emp) => emp.email));
-    }
-  };
-
-  const handleSendEmails = async () => {
-    if (!selectedEmails.length) {
-      setError('يرجى اختيار مستلم واحد على الأقل');
-      return;
-    }
-    if (!subject || !message) {
-      setError('يرجى إدخال موضوع والرسالة');
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedEmployee || !month) {
+      setError('يرجى اختيار موظف وشهر');
       return;
     }
     setLoading(true);
+    setError('');
+    setEmployeeData(null);
+    setAttendanceData([]);
+    setEvaluationData([]);
+
     try {
       const [year, monthNum] = month.split('-');
       const startDate = `${year}-${monthNum}-01`;
-      const endDate = new Date(year, parseInt(monthNum), 0).toISOString().split('T')[0]; // Last day of month
+      const endDate = new Date(year, parseInt(monthNum), 0).toISOString().split('T')[0];
 
-      for (const email of selectedEmails) {
-        const { data: empData, error: empError } = await supabaseClient
-          .from('employees')
-          .select('employeenumber')
-          .eq('email', email)
-          .single();
-        if (empError || !empData) {
-          throw new Error(`البريد ${email} غير موجود في جدول الموظفين`);
-        }
-
-        const { data: evalData, error: evalError } = await supabaseClient
-          .from('evaluation')
-          .select('employeenumber, employeename, presentdays, lateminutes, monthlyevaluation')
-          .eq('employeenumber', empData.employeenumber)
-          .gte('timestamp', startDate)
-          .lte('timestamp', endDate);
-
-        if (evalError || !evalData?.length) {
-          throw new Error(`لا توجد بيانات تقييم لـ ${email} لهذا الشهر`);
-        }
-
-        const report = evalData.map((row) => `
-          رقم الموظف: ${row.employeenumber}
-          الاسم: ${row.employeename}
-          أيام الحضور: ${row.presentdays || 0}
-          دقائق التأخير: ${row.lateminutes || 0}
-          التقييم الشهري: ${row.monthlyevaluation || 0}
-        `).join('\n\n');
-
-        const emailBody = `${message}\n\nتقرير التقييم الشهري لشهر ${month}:\n${report}`;
-
-        const response = await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: email,
-            subject,
-            text: emailBody,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(`فشل في إرسال البريد إلى ${email}: ${errorData.message}`);
-        }
+      // Fetch employee details
+      const { data: empData, error: empError } = await supabaseClient
+        .from('employees')
+        .select('employeenumber, employeename, email, jobtitle, workstatus, phonenumber')
+        .eq('employeenumber', selectedEmployee)
+        .single();
+      if (empError || !empData) {
+        throw new Error(`لم يتم العثور على الموظف: ${empError?.message || 'Unknown error'}`);
       }
 
-      setSuccess('تم إرسال التقارير بنجاح إلى جميع المستلمين المحددين!');
-      setSelectedEmails([]);
-      setMessage('');
+      // Fetch attendance data
+      const { data: attData, error: attError } = await supabaseClient
+        .from('attendance')
+        .select('check_date, check_in_time, check_out_time, status, notes')
+        .eq('employeenumber', selectedEmployee)
+        .gte('check_date', startDate)
+        .lte('check_date', endDate)
+        .order('check_date', { ascending: true });
+
+      if (attError) {
+        throw new Error(`فشل في جلب بيانات الحضور: ${attError.message}`);
+      }
+
+      // Fetch evaluation data
+      const { data: evalData, error: evalError } = await supabaseClient
+        .from('evaluation')
+        .select('presentdays, lateminutes, monthlyevaluation, timestamp')
+        .eq('employeenumber', selectedEmployee)
+        .gte('timestamp', startDate)
+        .lte('timestamp', endDate);
+
+      if (evalError) {
+        throw new Error(`فشل في جلب بيانات التقييم: ${evalError.message}`);
+      }
+
+      setEmployeeData(empData);
+      setAttendanceData(attData || []);
+      setEvaluationData(evalData || []);
     } catch (err) {
-      setError(err.message || 'فشل في إرسال التقارير');
-      console.error('Error sending emails:', err);
+      setError(err.message || 'فشل في جلب البيانات');
+      console.error('Error fetching report:', err);
     } finally {
       setLoading(false);
     }
@@ -124,74 +92,122 @@ export default function SendEmailReport({ supabaseClient }) {
 
   return (
     <div className="container mx-auto p-8 bg-gray-50 min-h-screen" dir="rtl">
-      <h1 className="text-4xl font-bold text-gray-800 mb-6 text-center">إرسال تقرير عبر الإيميل</h1>
+      <h1 className="text-4xl font-bold text-gray-800 mb-6 text-center">تقرير الموظف</h1>
       <Link href="/admin" className="inline-block mb-4 text-blue-600 hover:underline text-lg">
         العودة إلى لوحة التحكم
       </Link>
       {error && <p className="text-red-600 text-center mb-6 text-lg font-semibold">{error}</p>}
-      {success && <p className="text-green-600 text-center mb-6 text-lg font-semibold">{success}</p>}
-      <div className="bg-white p-8 rounded-lg shadow-md max-w-2xl mx-auto">
+      <form onSubmit={handleSubmit} className="bg-white p-8 rounded-lg shadow-md max-w-2xl mx-auto mb-8">
         <div className="mb-6">
-          <label className="block text-lg font-semibold text-gray-700 mb-2">اختر الشهر</label>
+          <label className="block text-lg font-semibold text-gray-700 mb-2" htmlFor="employee">
+            اختر الموظف
+          </label>
+          <select
+            id="employee"
+            value={selectedEmployee}
+            onChange={(e) => setSelectedEmployee(e.target.value)}
+            className="w-full border-2 border-gray-300 p-3 rounded-lg text-lg text-gray-700 focus:border-blue-600 focus:outline-none"
+          >
+            <option value="">-- اختر موظف --</option>
+            {employees.map((emp) => (
+              <option key={emp.employeenumber} value={emp.employeenumber}>
+                {emp.employeename} ({emp.employeenumber})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="mb-6">
+          <label className="block text-lg font-semibold text-gray-700 mb-2" htmlFor="month">
+            اختر الشهر
+          </label>
           <input
+            id="month"
             type="month"
             value={month}
-            onChange={(e) => setMonth(e.target.value)}
+            onChange={(e) => setMonthYear(e.target.value)}
             className="w-full border-2 border-gray-300 p-3 rounded-lg text-lg text-gray-700 focus:border-blue-600 focus:outline-none"
           />
-        </div>
-        <div className="mb-6">
-          <label className="block text-lg font-semibold text-gray-700 mb-2">موضوع البريد</label>
-          <input
-            type="text"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className="w-full border-2 border-gray-300 p-3 rounded-lg text-lg text-gray-700 focus:border-blue-600 focus:outline-none"
-            placeholder="أدخل موضوع البريد"
-          />
-        </div>
-        <div className="mb-6">
-          <label className="block text-lg font-semibold text-gray-700 mb-2">رسالة البريد</label>
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            className="w-full border-2 border-gray-300 p-3 rounded-lg text-lg text-gray-700 focus:border-blue-600 focus:outline-none"
-            rows="5"
-            placeholder="أدخل رسالتك هنا"
-          />
-        </div>
-        <div className="mb-6">
-          <label className="block text-lg font-semibold text-gray-700 mb-2">اختر المستلمين</label>
-          <button
-            onClick={handleSelectAll}
-            className="mb-4 px-4 py-2 text-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md transition duration-200"
-          >
-            {selectedEmails.length === employees.length ? 'إلغاء تحديد الكل' : 'تحديد الكل'}
-          </button>
-          <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-4">
-            {employees.map((emp) => (
-              <div key={emp.employeenumber} className="flex items-center mb-2">
-                <input
-                  type="checkbox"
-                  checked={selectedEmails.includes(emp.email)}
-                  onChange={() => handleEmailSelect(emp.email)}
-                  className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                />
-                <label className="mr-2 text-lg text-gray-700">
-                  {emp.employeename} ({emp.email})
-                </label>
-              </div>
-            ))}
-          </div>
         </div>
         <button
-          onClick={handleSendEmails}
+          type="submit"
           disabled={loading}
-          className="w-full py-4 text-xl font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-md transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="w-full py-4 text-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          {loading ? 'جارٍ الإرسال...' : 'إرسال التقارير'}
+          {loading ? 'جارٍ التحميل...' : 'عرض التقرير'}
         </button>
-      </div>
+      </form>
+
+      {employeeData && (
+        <div className="bg-white p-8 rounded-lg shadow-md max-w-4xl mx-auto">
+          <h2 className="text-2xl font-semibold text-gray-800 mb-4">تفاصيل الموظف</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <p><strong>رقم الموظف:</strong> {employeeData.employeenumber}</p>
+            <p><strong>الاسم:</strong> {employeeData.employeename}</p>
+            <p><strong>البريد الإلكتروني:</strong> {employeeData.email}</p>
+            <p><strong>المسمى الوظيفي:</strong> {employeeData.jobtitle || '-'}</p>
+            <p><strong>حالة العمل:</strong> {employeeData.workstatus || '-'}</p>
+            <p><strong>رقم الهاتف:</strong> {employeeData.phonenumber || '-'}</p>
+          </div>
+
+          <h2 className="text-2xl font-semibold text-gray-800 mb-4">بيانات الحضور</h2>
+          {attendanceData.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-right">
+                <thead>
+                  <tr className="bg-blue-600 text-white">
+                    <th className="p-3 text-lg">التاريخ</th>
+                    <th className="p-3 text-lg">وقت الدخول</th>
+                    <th className="p-3 text-lg">وقت الخروج</th>
+                    <th className="p-3 text-lg">الحالة</th>
+                    <th className="p-3 text-lg">ملاحظات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attendanceData.map((row, index) => (
+                    <tr key={index} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                      <td className="p-3 border">{row.check_date}</td>
+                      <td className="p-3 border">{row.check_in_time || '-'}</td>
+                      <td className="p-3 border">{row.check_out_time || '-'}</td>
+                      <td className="p-3 border">{row.status || '-'}</td>
+                      <td className="p-3 border">{row.notes || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-gray-600 text-center">لا توجد بيانات حضور لهذا الشهر</p>
+          )}
+
+          <h2 className="text-2xl font-semibold text-gray-800 mb-4 mt-8">بيانات التقييم</h2>
+          {evaluationData.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-right">
+                <thead>
+                  <tr className="bg-blue-600 text-white">
+                    <th className="p-3 text-lg">أيام الحضور</th>
+                    <th className="p-3 text-lg">دقائق التأخير</th>
+                    <th className="p-3 text-lg">التقييم الشهري</th>
+                    <th className="p-3 text-lg">التاريخ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {evaluationData.map((row, index) => (
+                    <tr key={index} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                      <td className="p-3 border">{row.presentdays || 0}</td>
+                      <td className="p-3 border">{row.lateminutes || 0}</td>
+                      <td className="p-3 border">{row.monthlyevaluation || 0}</td>
+                      <td className="p-3 border">{row.timestamp.split('T')[0]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-gray-600 text-center">لا توجد بيانات تقييم لهذا الشهر</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
