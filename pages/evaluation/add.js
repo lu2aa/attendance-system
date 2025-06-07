@@ -1,84 +1,91 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { useRouter } from 'next/router'
+import Link from 'next/link'
 
 export default function AddEvaluation() {
-  const [evaluation, setEvaluation] = useState({
-    employee_name: '',
-    evaluation_month: '',
-    evaluation_score: '',
-    comments: ''
-  })
-  const router = useRouter()
-
-  const handleChange = (e) => {
-    setEvaluation({ ...evaluation, [e.target.name]: e.target.value })
-  }
+  const [employeeName, setEmployeeName] = useState('')
+  const [month, setMonth] = useState('')
+  const [score, setScore] = useState('')
+  const [comments, setComments] = useState('')
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setLoading(true)
     try {
       const { error } = await supabase
         .from('evaluation')
-        .insert([evaluation])
+        .insert([{ employee_name: employeeName, evaluation_month: month, evaluation_score: score, comments }])
       if (error) throw error
-      router.push('/evaluation')
-    } catch (error) {
-      console.error('Error adding evaluation:', error.message)
-      alert('Error: ' + error.message)
+      setEmployeeName('')
+      setMonth('')
+      setScore('')
+      setComments('')
+      alert('تم إضافة التقييم بنجاح!')
+    } catch (err) {
+      console.error('Error:', err)
+      setError(err.message || 'فشل في إضافة التقييم')
+    } finally {
+      setLoading(false)
     }
   }
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Add Evaluation</h1>
-      <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
-        <div>
-          <label className="block text-sm font-medium">Employee Name</label>
+    <div className="container mx-auto p-6 bg-gray-100 min-h-screen">
+      <h1 className="text-4xl font-bold text-gray-900 mb-6 text-center">إضافة تقييم جديد</h1>
+      <Link href="/evaluation" className="inline-block mb-6 text-blue-600 hover:underline">
+        العودة إلى التقييمات
+      </Link>
+      {error && <p className="text-red-600 text-center mb-4">{error}</p>}
+      <form onSubmit={handleSubmit} className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-2xl">
+        <div className="mb-4">
+          <label className="block text-sm font-semibold text-gray-700">اسم الموظف</label>
           <input
             type="text"
-            name="employee_name"
-            value={evaluation.employee_name}
-            onChange={handleChange}
-            className="border p-2 w-full rounded"
+            value={employeeName}
+            onChange={(e) => setEmployeeName(e.target.value)}
+            placeholder="أدخل اسم الموظف"
+            className="mt-2 border p-3 w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
             required
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium">Month</label>
+        <div className="mb-4">
+          <label className="block text-sm font-semibold text-gray-700">الشهر</label>
           <input
             type="text"
-            name="evaluation_month"
-            value={evaluation.evaluation_month}
-            onChange={handleChange}
-            className="border p-2 w-full rounded"
-            placeholder="e.g., January 2025"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            placeholder="مثال: يناير 2025"
+            className="mt-2 border p-3 w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
             required
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium">Score</label>
+        <div className="mb-4">
+          <label className="block text-sm font-semibold text-gray-700">الدرجة</label>
           <input
             type="number"
-            name="evaluation_score"
-            value={evaluation.evaluation_score}
-            onChange={handleChange}
-            className="border p-2 w-full rounded"
-            min="0"
-            max="100"
+            value={score}
+            onChange={(e) => setScore(e.target.value)}
+            placeholder="أدخل الدرجة"
+            className="mt-2 border p-3 w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium">Comments</label>
+        <div className="mb-4">
+          <label className="block text-sm font-semibold text-gray-700">التعليقات</label>
           <textarea
-            name="comments"
-            value={evaluation.comments}
-            onChange={handleChange}
-            className="border p-2 w-full rounded"
-          ></textarea>
+            value={comments}
+            onChange={(e) => setComments(e.target.value)}
+            placeholder="أدخل التعليقات"
+            className="mt-2 border p-3 w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+          />
         </div>
-        <button type="submit" className="p-2 bg-blue-500 text-white rounded w-full">
-          Add Evaluation
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full px-8 py-3 bg-blue-600 text-white font-semibold rounded-full shadow-lg hover:bg-blue-700 transition duration-300 disabled:bg-gray-400"
+        >
+          {loading ? 'جارٍ الإضافة...' : 'إضافة التقييم'}
         </button>
       </form>
     </div>

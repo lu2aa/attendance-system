@@ -17,4 +17,5 @@ import Link from 'next/link'
              العودة إلى الرئيسية
            </Link>
          </div>
-       )}
+       )
+     }
