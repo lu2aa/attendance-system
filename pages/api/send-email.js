@@ -1,28 +1,23 @@
-import sgMail from '@sendgrid/mail';
-
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+import { Resend } from 'resend';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { to, subject, text } = req.body;
-
-  if (!to || !subject || !text) {
-    return res.status(400).json({ message: 'Missing required fields' });
-  }
+  const { to, subject, content } = req.body;
+  const resend = new Resend(process.env.RESEND_API_KEY);
 
   try {
-    await sgMail.send({
+    await resend.emails.send({
+      from: 'no-reply@yourdomain.com',
       to,
-      from: process.env.SENDGRID_FROM_EMAIL, // e.g., 'noreply@yourdomain.com'
       subject,
-      text,
+      html: content,
     });
-    return res.status(200).json({ message: 'Email sent successfully' });
+    res.status(200).json({ message: 'Email sent successfully' });
   } catch (error) {
-    console.error('SendGrid error:', error);
-    return res.status(500).json({ message: `Failed to send email: ${error.message}` });
+    console.error('Error sending email:', error);
+    res.status(500).json({ error: 'Failed to send email' });
   }
 }

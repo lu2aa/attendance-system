@@ -7,21 +7,30 @@ export default function Navbar() {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [error, setError] = useState(null);
   const router = useRouter();
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      if (user) {
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', user.id)
-          .single();
-        if (!error && profile?.is_admin) {
-          setIsAdmin(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setUser(user);
+        if (user) {
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('is_admin')
+            .eq('id', user.id)
+            .single();
+          if (profileError) {
+            throw profileError;
+          }
+          if (profile?.is_admin) {
+            setIsAdmin(true);
+          }
         }
+      } catch (err) {
+        console.error('Supabase error:', err);
+        setError('فشل تحميل بيانات المستخدم');
       }
     };
     checkUser();
@@ -41,11 +50,20 @@ export default function Navbar() {
   }, []);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/signin');
+    try {
+      await supabase.auth.signOut();
+      router.push('/signin');
+    } catch (err) {
+      console.error('Sign out error:', err);
+      setError('فشل تسجيل الخروج');
+    }
   };
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
+
+  if (error) {
+    return <div className="bg-red-600 text-white p-4 text-center">{error}</div>;
+  }
 
   return (
     <nav className="bg-blue-800 text-white shadow-lg" dir="rtl">
@@ -68,12 +86,12 @@ export default function Navbar() {
                       التقارير
                     </button>
                     <div className="absolute hidden group-hover:block bg-blue-800 rounded-lg shadow-lg mt-2">
+
                       <Link href="/reports/send-email" className="block px-4 py-2 text-lg hover:bg-blue-700">
-                        إرسال تقرير عبر الإيميل
-                      </Link>
-                      <Link href="/reports/employee" className="block px-4 py-2 text-lg hover:bg-blue-700">
-                        تقرير الموظف
-                      </Link>
+  إرسال تقرير عبر الإيميل
+</Link>
+<Link href="/reports/employees" className="block px-4 py-2 text-lg hover:bg-blue-700">
+تقرير الموظفين</Link>
                     </div>
                   </div>
                   <Link href="/admin/upload" className="px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
@@ -115,12 +133,15 @@ export default function Navbar() {
                         التقارير
                       </button>
                       <div className="pr-8">
-                        <Link href="/reports/send-email" className="block px-4 py-2 text-lg hover:bg-blue-700">
-                          إرسال تقرير عبر الإيميل
-                        </Link>
-                        <Link href="/reports/employee" className="block px-4 py-2 text-lg hover:bg-blue-700">
-                          تقرير الموظف
-                        </Link>
+<Link href="/reports/send-email" className="block px-4 py-2 text-lg hover:bg-blue-700">
+  إرسال تقرير عبر الإيميل
+</Link>
+-<Link href="/reports/employee" className="block px-4 py-2 text-lg hover:bg-blue-700">
+-  تقرير الموظف
+-</Link>
++<Link href="/reports/employees" className="block px-4 py-2 text-lg hover:bg-blue-700">
++  تقرير الموظفين
++</Link>
                       </div>
                     </div>
                     <Link href="/admin/upload" className="px-4 py-2 text-lg hover:bg-blue-700 rounded-lg">
@@ -133,7 +154,8 @@ export default function Navbar() {
                 </Link>
                 <button
                   onClick={handleSignOut}
-                  className="px-4 py-2 text-lg bg-red-600 hover:bg-red-700 rounded-lg">
+                  className="px-4 py-2 text-lg bg-red-600 hover:bg-red-700 rounded-lg"
+                >
                   تسجيل الخروج
                 </button>
               </>

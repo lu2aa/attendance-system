@@ -5,28 +5,40 @@ import { supabase } from '../lib/supabaseClient';
 export default function Home() {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      if (user) {
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', user.id)
-          .single();
-        if (!error && profile?.is_admin) {
-          setIsAdmin(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setUser(user);
+        if (user) {
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('is_admin')
+            .eq('id', user.id)
+            .single();
+          if (profileError) {
+            throw profileError;
+          }
+          if (profile?.is_admin) {
+            setIsAdmin(true);
+          }
         }
+      } catch (err) {
+        console.error('Supabase error:', err);
+        setError('فشل تحميل بيانات المستخدم');
       }
     };
     checkUser();
   }, []);
 
+  if (error) {
+    return <div className="bg-red-600 text-white p-4 text-center">{error}</div>;
+  }
+
   return (
     <div className="min-h-screen bg-gray-100" dir="rtl">
-      <div className="bg-blue-600 text-white p-4 text-center">Test Tailwind Colors</div>
       <div className="container mx-auto p-8">
         <h1 className="text-4xl font-bold text-gray-800 text-center mb-8">
           مرحبًا بك في نظام الحضور
@@ -74,7 +86,7 @@ export default function Home() {
                 </div>
               </Link>
               <Link href="/signup" className="block">
-                <div className="bg-green-600 text-white p-6 rounded-lg shadow-md hover:bg-green-700 transition duration-200">
+                <div className="bg-green-600 text-white p-6 rounded-lg shadow-md hover:bg-blue-700 transition duration-200">
                   <h2 className="text-xl font-semibold mb-2">إنشاء حساب</h2>
                   <p className="text-sm">إنشاء حساب جديد في النظام</p>
                 </div>

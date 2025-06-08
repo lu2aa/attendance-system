@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../../lib/supabaseClient';
 
-export default function AdminUpload({ supabaseClient }) {
+export default function AdminUpload() {
   const [activeTab, setActiveTab] = useState('employees');
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
@@ -13,11 +14,33 @@ export default function AdminUpload({ supabaseClient }) {
   const router = useRouter();
 
   useEffect(() => {
+    const checkAdmin = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.push('/signin');
+          return;
+        }
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .single();
+        if (profileError || !profile?.is_admin) {
+          router.push('/');
+        }
+      } catch (err) {
+        console.error('Supabase error:', err);
+        setError('فشل التحقق من صلاحيات المستخدم');
+      }
+    };
+    checkAdmin();
+
     const { tab } = router.query;
     if (tab && ['employees', 'attendance', 'schedule', 'requests', 'evaluation'].includes(tab)) {
       setActiveTab(tab);
     }
-  }, [router.query]);
+  }, [router.query, router]);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -34,275 +57,290 @@ export default function AdminUpload({ supabaseClient }) {
     setLoading(true);
     try {
       const fileType = file.name.split('.').pop()?.toLowerCase();
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          let jsonData;
-          if (fileType === 'csv' && activeTab === 'attendance') {
-            const text = event.target.result;
-            const workbook = XLSX.read(text, { type: 'string', raw: true });
-            const sheetName = workbook.SheetNames[0];
-            const sheet = workbook.Sheets[sheetName];
-            jsonData = XLSX.utils.sheet_to_json(sheet);
-          } else if (['xls', 'xlsx'].includes(fileType)) {
-            const data = new Uint8Array(event.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheetName = workbook.SheetNames[0];
-            const sheet = workbook.Sheets[sheetName];
-            jsonData = XLSX.utils.sheet_to_json(sheet);
-          } else {
-            throw new Error('نوع الملف غير مدعوم: استخدم XLS/XLSX لجميع الجداول عدا الحركات (CSV)');
-          }
-
-          if (!jsonData.length) {
-            throw new Error('الملف فارغ أو لا يحتوي على بيانات صالحة');
-          }
-
-          let table, dataToInsert, expectedHeaders;
-
-          switch (activeTab) {
-            case 'employees':
-              table = 'employees';
-              expectedHeaders = [
-                'رقم الموظف', 'اسم الموظف', 'البريد الإلكتروني', 'المسمى الوظيفي', 'الدرجة', 'حالة العمل',
-                'أيام العمل', 'دوام جزئي', 'الوردية', 'مسيحي', 'ساعة رضاعة', 'إعاقة',
-                'رصيد الإجازة العادية', 'رصيد الإجازة العارضة', 'عدد أيام الغياب', 'رقم الهاتف',
-                'الرقم القومي', 'رابط', 'نوع ساعة الرضاعة', 'بداية ساعة الرضاعة', 'نهاية ساعة الرضاعة',
-                'التقييم الشهري', 'التدريب', 'ملاحظات'
-              ];
-              dataToInsert = jsonData.map(row => ({
-                employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
-                employeename: row['اسم الموظف']?.toString()?.trim() || '',
-                email: row['البريد الإلكتروني']?.toString()?.trim()?.toLowerCase() || '',
-                jobtitle: row['المسمى الوظيفي']?.toString()?.trim() || '',
-                grade: row['الدرجة']?.toString()?.trim() || '',
-                workstatus: row['حالة العمل']?.toString()?.trim() || '',
-                workdays: parseInt(row['أيام العمل']) || null,
-                parttime: row['دوام جزئي'] === 'نعم' || false,
-                shift: row['الوردية']?.toString()?.trim() || '',
-                ischristian: row['مسيحي'] === 'نعم' || false,
-                nursinghour: row['ساعة رضاعة'] === 'نعم' || false,
-                disability: row['إعاقة'] === 'نعم' || false,
-                regularleavebalance: parseInt(row['رصيد الإجازة العادية']) || null,
-                casualleavebalance: parseInt(row['رصيد الإجازة العارضة']) || null,
-                absencedayscount: parseInt(row['عدد أيام الغياب']) || null,
-                phonenumber: row['رقم الهاتف']?.toString()?.trim() || '',
-                nationalid: row['الرقم القومي']?.toString()?.trim() || '',
-                link: row['رابط']?.toString()?.trim() || '',
-                nursinghourtype: row['نوع ساعة الرضاعة']?.toString()?.trim() || '',
-                nursinghourstart: row['بداية ساعة الرضاعة']?.toString()?.trim() || '',
-                nursinghourend: row['نهاية ساعة الرضاعة']?.toString()?.trim() || '',
-                monthlyevaluation: parseInt(row['التقييم الشهري']) || null,
-                training: row['التدريب']?.toString()?.trim() || '',
-                notes: row['ملاحظات']?.toString()?.trim() || ''
-              }));
-              for (const emp of dataToInsert) {
-                if (!emp.employeenumber || !emp.employeename || !emp.email) {
-                  throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${emp.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف، الاسم، والبريد الإلكتروني`);
-                }
-                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emp.email)) {
-                  throw new Error(`بريد إلكتروني غير صالح: ${emp.email}`);
-                }
-              }
-              break;
-
-            case 'evaluation':
-              table = 'evaluation';
-              expectedHeaders = [
-                'رقم الموظف', 'اسم الموظف', 'المسمى الوظيفي', 'أيام الحضور', 'ساعات العمل',
-                'إجازة عادية', 'إجازة عارضة', 'دقائق التأخير', 'التقييم الشهري', 'الطابع الزمني'
-              ];
-              dataToInsert = jsonData.map(row => ({
-                id: uuidv4(),
-                employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
-                employeename: row['اسم الموظف']?.toString()?.trim() || '',
-                jobtitle: row['المسمى الوظيفي']?.toString()?.trim() || '',
-                presentdays: parseInt(row['أيام الحضور']) || null,
-                workhours: parseInt(row['ساعات العمل']) || null,
-                regularleave: parseInt(row['إجازة عادية']) || null,
-                casualleave: parseInt(row['إجازة عارضة']) || null,
-                lateminutes: parseInt(row['دقائق التأخير']) || null,
-                monthlyevaluation: parseInt(row['التقييم الشهري']) || null,
-                timestamp: row['الطابع الزمني']?.toString()?.trim() || null
-              }));
-              for (const evalData of dataToInsert) {
-                if (!evalData.employeenumber || !evalData.employeename) {
-                  throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${evalData.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف والاسم`);
-                }
-                const { data: employee, error: empError } = await supabaseClient
-                  .from('employees')
-                  .select('employeenumber')
-                  .eq('employeenumber', evalData.employeenumber)
-                  .single();
-                if (empError || !employee) {
-                  throw new Error(`رقم الموظف ${evalData.employeenumber} غير موجود في جدول الموظفين`);
-                }
-              }
-              break;
-
-            case 'requests':
-              table = 'requests';
-              expectedHeaders = [
-                'رقم الموظف', 'اسم الموظف', 'البريد الإلكتروني', 'نوع الطلب', 'تاريخ بدء الطلب',
-                'تاريخ انتهاء الطلب', 'البدل', 'ملاحظات', 'تاريخ العودة للعمل', 'الموافقة', 'الرد'
-              ];
-              dataToInsert = jsonData.map(row => ({
-                id: uuidv4(),
-                employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
-                employeename: row['اسم الموظف']?.toString()?.trim() || '',
-                email: row['البريد الإلكتروني']?.toString()?.trim()?.toLowerCase() || '',
-                requesttype: row['نوع الطلب']?.toString()?.trim() || '',
-                requeststartdate: row['تاريخ بدء الطلب']?.toString()?.trim() || '',
-                requestenddate: row['تاريخ انتهاء الطلب']?.toString()?.trim() || null,
-                allowance: row['البدل']?.toString()?.trim() || '',
-                notes: row['ملاحظات']?.toString()?.trim() || '',
-                backtoworkdate: row['تاريخ العودة للعمل']?.toString()?.trim() || null,
-                approval: row['الموافقة']?.toString()?.trim() || 'معلق',
-                reply: row['الرد']?.toString()?.trim() || ''
-              }));
-              for (const req of dataToInsert) {
-                if (!req.employeenumber || !req.employeename || !req.email || !req.requesttype || !req.requeststartdate) {
-                  throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${req.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف، الاسم، البريد الإلكتروني، نوع الطلب، وتاريخ البدء`);
-                }
-                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(req.email)) {
-                  throw new Error(`بريد إلكتروني غير صالح: ${req.email}`);
-                }
-                const { data: employee, error: empError } = await supabaseClient
-                  .from('employees')
-                  .select('employeenumber, email')
-                  .eq('employeenumber', req.employeenumber)
-                  .eq('email', req.email)
-                  .single();
-                if (empError || !employee) {
-                  throw new Error(`رقم الموظف ${req.employeenumber} أو البريد ${req.email} غير موجود في جدول الموظفين`);
-                }
-                if (!/^\d{4}-\d{2}-\d{2}$/.test(req.requeststartdate)) {
-                  throw new Error(`تاريخ بدء الطلب غير صالح: ${req.requeststartdate}، يجب أن يكون بصيغة YYYY-MM-DD`);
-                }
-                if (req.requestenddate && !/^\d{4}-\d{2}-\d{2}$/.test(req.requestenddate)) {
-                  throw new Error(`تاريخ انتهاء الطلب غير صالح: ${req.requestenddate}، يجب أن يكون بصيغة YYYY-MM-DD`);
-                }
-                if (req.backtoworkdate && !/^\d{4}-\d{2}-\d{2}$/.test(req.backtoworkdate)) {
-                  throw new Error(`تاريخ العودة للعمل غير صالح: ${req.backtoworkdate}، يجب أن يكون بصيغة YYYY-MM-DD`);
-                }
-              }
-              break;
-
-            case 'schedule':
-              table = 'schedule';
-              expectedHeaders = [
-                'اليوم', 'التاريخ', 'موظف المساء 1', 'موظف المساء 2', 'موظف الليل'
-              ];
-              dataToInsert = jsonData.map(row => ({
-                id: uuidv4(),
-                day: row['اليوم']?.toString()?.trim() || '',
-                date: row['التاريخ']?.toString()?.trim() || '',
-                eveningemployee_1: row['موظف المساء 1']?.toString()?.trim() || null,
-                eveningemployee_2: row['موظف المساء 2']?.toString()?.trim() || null,
-                nightemployee_1: row['موظف الليل']?.toString()?.trim() || null
-              }));
-              for (const sch of dataToInsert) {
-                if (!sch.day || !sch.date) {
-                  throw new Error(`بيانات غير مكتملة في السطر: التاريخ=${sch.date || 'غير محدد'}، يجب توفير اليوم والتاريخ`);
-                }
-                if (!/^\d{4}-\d{2}-\d{2}$/.test(sch.date)) {
-                  throw new Error(`تاريخ غير صالح: ${sch.date}، يجب أن يكون بصيغة YYYY-MM-DD`);
-                }
-                for (const empField of ['eveningemployee_1', 'eveningemployee_2', 'nightemployee_1']) {
-                  if (sch[empField]) {
-                    const { data: employee, error: empError } = await supabaseClient
-                      .from('employees')
-                      .select('employeenumber')
-                      .eq('employeenumber', sch[empField])
-                      .single();
-                    if (empError || !employee) {
-                      throw new Error(`رقم الموظف ${sch[empField]} غير موجود في جدول الموظفين`);
-                    }
-                  }
-                }
-              }
-              break;
-
-            case 'attendance':
-              table = 'attendance';
-              expectedHeaders = [
-                'رقم الموظف', 'تاريخ الحضور', 'وقت الدخول', 'وقت الخروج', 'الحالة', 'ملاحظات'
-              ];
-              dataToInsert = jsonData.map(row => ({
-                id: uuidv4(),
-                employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
-                check_date: row['تاريخ الحضور']?.toString()?.trim() || '',
-                check_in_time: row['وقت الدخول']?.toString()?.trim() || null,
-                check_out_time: row['وقت الخروج']?.toString()?.trim() || null,
-                status: row['الحالة']?.toString()?.trim() || '',
-                notes: row['ملاحظات']?.toString()?.trim() || ''
-              }));
-              for (const att of dataToInsert) {
-                if (!att.employeenumber || !att.check_date) {
-                  throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${att.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف وتاريخ الحضور`);
-                }
-                if (!/^\d{4}-\d{2}-\d{2}$/.test(att.check_date)) {
-                  throw new Error(`تاريخ حضور غير صالح: ${att.check_date}، يجب أن يكون بصيغة YYYY-MM-DD`);
-                }
-                if (att.check_in_time && !/^\d{2}:\d{2}(:\d{2})?$/.test(att.check_in_time)) {
-                  throw new Error(`وقت الدخول غير صالح: ${att.check_in_time}، يجب أن يكون بصيغة HH:MM أو HH:MM:SS`);
-                }
-                if (att.check_out_time && !/^\d{2}:\d{2}(:\d{2})?$/.test(att.check_out_time)) {
-                  throw new Error(`وقت الخروج غير صالح: ${att.check_out_time}، يجب أن يكون بصيغة HH:MM أو HH:MM:SS`);
-                }
-                const { data: employee, error: empError } = await supabaseClient
-                  .from('employees')
-                  .select('employeenumber')
-                  .eq('employeenumber', att.employeenumber)
-                  .single();
-                if (empError || !employee) {
-                  throw new Error(`رقم الموظف ${att.employeenumber} غير موجود في جدول الموظفين`);
-                }
-              }
-              break;
-
-            default:
-              throw new Error('جدول غير معروف');
-          }
-
-          const receivedHeaders = Object.keys(jsonData[0]);
-          const missingHeaders = expectedHeaders.filter(h => !receivedHeaders.includes(h));
-          if (missingHeaders.length > 0) {
-            throw new Error(`أعمدة مفقودة في الملف: ${missingHeaders.join(', ')}`);
-          }
-
-          const { error: insertError } = await supabaseClient
-            .from(table)
-            .upsert(table === 'employees' ? dataToInsert : dataToInsert, {
-              onConflict: table === 'employees' ? 'employeenumber' : undefined
-            });
-
-          if (insertError) {
-            throw new Error(`فشل في رفع البيانات: ${insertError.message}`);
-          }
-
-          setSuccess(`تم رفع ${dataToInsert.length} سجل بنجاح إلى جدول ${activeTab === 'employees' ? 'الموظفين' : activeTab === 'attendance' ? 'الحركات' : activeTab === 'schedule' ? 'الجداول' : activeTab === 'requests' ? 'الطلبات' : 'التقييمات'}!`);
-          setFile(null);
-          e.target.reset();
-        } catch (err) {
-          setError(err.message || 'فشل في معالجة الملف أو رفع البيانات');
-          console.error('Processing error:', err);
-        } finally {
-          setLoading(false);
-        }
-      };
-      reader.onerror = () => {
-        setError('حدث خطأ أثناء قراءة الملف');
-        setLoading(false);
-      };
-      if (fileType === 'csv' && activeTab === 'attendance') {
-        reader.readAsText(file, 'UTF-8');
-      } else {
-        reader.readAsArrayBuffer(file);
+      if (fileType !== 'csv' && !['xls', 'xlsx'].includes(fileType)) {
+        throw new Error('نوع الملف غير مدعوم: استخدم XLS/XLSX لجميع الجداول عدا الحركات (CSV)');
       }
+
+      const buffer = await file.arrayBuffer();
+      let jsonData;
+
+      if (fileType === 'csv' && activeTab === 'attendance') {
+        const text = new TextDecoder('utf-8').decode(buffer);
+        const workbook = new ExcelJS.Workbook();
+        await workbook.csv.read(new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(text));
+            controller.close();
+          }
+        }));
+        const worksheet = workbook.getWorksheet(1);
+        jsonData = [];
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber > 1) {
+            const values = row.values.slice(1);
+            jsonData.push({
+              'رقم الموظف': values[0],
+              'تاريخ الحضور': values[1],
+              'وقت الدخول': values[2],
+              'وقت الخروج': values[3],
+              'الحالة': values[4],
+              'ملاحظات': values[5]
+            });
+          }
+        });
+      } else if (['xls', 'xlsx'].includes(fileType)) {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buffer);
+        const worksheet = workbook.getWorksheet(1);
+        const headers = worksheet.getRow(1).values.slice(1);
+        jsonData = [];
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber > 1) {
+            const rowData = {};
+            row.values.slice(1).forEach((value, index) => {
+              rowData[headers[index]] = value;
+            });
+            jsonData.push(rowData);
+          }
+        });
+      } else {
+        throw new Error('نوع الملف غير مدعوم');
+      }
+
+      if (!jsonData.length) {
+        throw new Error('الملف فارغ أو لا يحتوي على بيانات صالحة');
+      }
+
+      let table, dataToInsert, expectedHeaders;
+
+      switch (activeTab) {
+        case 'employees':
+          table = 'employees';
+          expectedHeaders = [
+            'رقم الموظف', 'اسم الموظف', 'البريد الإلكتروني', 'المسمى الوظيفي', 'الدرجة', 'حالة العمل',
+            'أيام العمل', 'دوام جزئي', 'الوردية', 'مسيحي', 'ساعة رضاعة', 'إعاقة',
+            'رصيد الإجازة العادية', 'رصيد الإجازة العارضة', 'عدد أيام الغياب', 'رقم الهاتف',
+            'الرقم القومي', 'رابط', 'نوع ساعة الرضاعة', 'بداية ساعة الرضاعة', 'نهاية ساعة الرضاعة',
+            'التقييم الشهري', 'التدريب', 'ملاحظات'
+          ];
+          dataToInsert = jsonData.map(row => ({
+            employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
+            employeename: row['اسم الموظف']?.toString()?.trim() || '',
+            email: row['البريد الإلكتروني']?.toString()?.trim()?.toLowerCase() || '',
+            jobtitle: row['المسمى الوظيفي']?.toString()?.trim() || '',
+            grade: row['الدرجة']?.toString()?.trim() || '',
+            workstatus: row['حالة العمل']?.toString()?.trim() || '',
+            workdays: parseInt(row['أيام العمل']) || null,
+            parttime: row['دوام جزئي'] === 'نعم' || false,
+            shift: row['الوردية']?.toString()?.trim() || '',
+            ischristian: row['مسيحي'] === 'نعم' || false,
+            nursinghour: row['ساعة رضاعة'] === 'نعم' || false,
+            disability: row['إعاقة'] === 'نعم' || false,
+            regularleavebalance: parseInt(row['رصيد الإجازة العادية']) || null,
+            casualleavebalance: parseInt(row['رصيد الإجازة العارضة']) || null,
+            absencedayscount: parseInt(row['عدد أيام الغياب']) || null,
+            phonenumber: row['رقم الهاتف']?.toString()?.trim() || '',
+            nationalid: row['الرقم القومي']?.toString()?.trim() || '',
+            link: row['رابط']?.toString()?.trim() || '',
+            nursinghourtype: row['نوع ساعة الرضاعة']?.toString()?.trim() || '',
+            nursinghourstart: row['بداية ساعة الرضاعة']?.toString()?.trim() || '',
+            nursinghourend: row['نهاية ساعة الرضاعة']?.toString()?.trim() || '',
+            monthlyevaluation: parseInt(row['التقييم الشهري']) || null,
+            training: row['التدريب']?.toString()?.trim() || '',
+            notes: row['ملاحظات']?.toString()?.trim() || ''
+          }));
+          for (const emp of dataToInsert) {
+            if (!emp.employeenumber || !emp.employeename || !emp.email) {
+              throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${emp.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف، الاسم، والبريد الإلكتروني`);
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emp.email)) {
+              throw new Error(`بريد إلكتروني غير صالح: ${emp.email}`);
+            }
+          }
+          break;
+
+        case 'evaluation':
+          table = 'evaluation';
+          expectedHeaders = [
+            'رقم الموظف', 'اسم الموظف', 'المسمى الوظيفي', 'أيام الحضور', 'ساعات العمل',
+            'إجازة عادية', 'إجازة عارضة', 'دقائق التأخير', 'التقييم الشهري', 'الطابع الزمني'
+          ];
+          dataToInsert = jsonData.map(row => ({
+            id: uuidv4(),
+            employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
+            employeename: row['اسم الموظف']?.toString()?.trim() || '',
+            jobtitle: row['المسمى الوظيفي']?.toString()?.trim() || '',
+            presentdays: parseInt(row['أيام الحضور']) || null,
+            workhours: parseInt(row['ساعات العمل']) || null,
+            regularleave: parseInt(row['إجازة عادية']) || null,
+            casualleave: parseInt(row['إجازة عارضة']) || null,
+            lateminutes: parseInt(row['دقائق التأخير']) || null,
+            monthlyevaluation: parseInt(row['التقييم الشهري']) || null,
+            timestamp: row['الطابع الزمني']?.toString()?.trim() || null
+          }));
+          for (const evalData of dataToInsert) {
+            if (!evalData.employeenumber || !evalData.employeename) {
+              throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${evalData.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف والاسم`);
+            }
+            const { data: employee, error: empError } = await supabase
+              .from('employees')
+              .select('employeenumber')
+              .eq('employeenumber', evalData.employeenumber)
+              .single();
+            if (empError || !employee) {
+              throw new Error(`رقم الموظف ${evalData.employeenumber} غير موجود في جدول الموظفين`);
+            }
+          }
+          break;
+
+        case 'requests':
+          table = 'requests';
+          expectedHeaders = [
+            'رقم الموظف', 'اسم الموظف', 'البريد الإلكتروني', 'نوع الطلب', 'تاريخ بدء الطلب',
+            'تاريخ انتهاء الطلب', 'البدل', 'ملاحظات', 'تاريخ العودة للعمل', 'الموافقة', 'الرد'
+          ];
+          dataToInsert = jsonData.map(row => ({
+            id: uuidv4(),
+            employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
+            employeename: row['اسم الموظف']?.toString()?.trim() || '',
+            email: row['البريد الإلكتروني']?.toString()?.trim()?.toLowerCase() || '',
+            requesttype: row['نوع الطلب']?.toString()?.trim() || '',
+            requeststartdate: row['تاريخ بدء الطلب']?.toString()?.trim() || '',
+            requestenddate: row['تاريخ انتهاء الطلب']?.toString()?.trim() || null,
+            allowance: row['البدل']?.toString()?.trim() || '',
+            notes: row['ملاحظات']?.toString()?.trim() || '',
+            backtoworkdate: row['تاريخ العودة للعمل']?.toString()?.trim() || null,
+            approval: row['الموافقة']?.toString()?.trim() || 'معلق',
+            reply: row['الرد']?.toString()?.trim() || ''
+          }));
+          for (const req of dataToInsert) {
+            if (!req.employeenumber || !req.employeename || !req.email || !req.requesttype || !req.requeststartdate) {
+              throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${req.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف، الاسم، البريد الإلكتروني، نوع الطلب، وتاريخ البدء`);
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(req.email)) {
+              throw new Error(`بريد إلكتروني غير صالح: ${req.email}`);
+            }
+            const { data: employee, error: empError } = await supabase
+              .from('employees')
+              .select('employeenumber, email')
+              .eq('employeenumber', req.employeenumber)
+              .eq('email', req.email)
+              .single();
+            if (empError || !employee) {
+              throw new Error(`رقم الموظف ${req.employeenumber} أو البريد ${req.email} غير موجود في جدول الموظفين`);
+            }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(req.requeststartdate)) {
+              throw new Error(`تاريخ بدء الطلب غير صالح: ${req.requeststartdate}، يجب أن يكون بصيغة YYYY-MM-DD`);
+            }
+            if (req.requestenddate && !/^\d{4}-\d{2}-\d{2}$/.test(req.requestenddate)) {
+              throw new Error(`تاريخ انتهاء الطلب غير صالح: ${req.requestenddate}، يجب أن يكون بصيغة YYYY-MM-DD`);
+            }
+            if (req.backtoworkdate && !/^\d{4}-\d{2}-\d{2}$/.test(req.backtoworkdate)) {
+              throw new Error(`تاريخ العودة للعمل غير صالح: ${req.backtoworkdate}، يجب أن يكون بصيغة YYYY-MM-DD`);
+            }
+          }
+          break;
+
+        case 'schedule':
+          table = 'schedule';
+          expectedHeaders = [
+            'اليوم', 'التاريخ', 'موظف المساء 1', 'موظف المساء 2', 'موظف الليل'
+          ];
+          dataToInsert = jsonData.map(row => ({
+            id: uuidv4(),
+            day: row['اليوم']?.toString()?.trim() || '',
+            date: row['التاريخ']?.toString()?.trim() || '',
+            eveningemployee_1: row['موظف المساء 1']?.toString()?.trim() || null,
+            eveningemployee_2: row['موظف المساء 2']?.toString()?.trim() || null,
+            nightemployee_1: row['موظف الليل']?.toString()?.trim() || null
+          }));
+          for (const sch of dataToInsert) {
+            if (!sch.day || !sch.date) {
+              throw new Error(`بيانات غير مكتملة في السطر: التاريخ=${sch.date || 'غير محدد'}، يجب توفير اليوم والتاريخ`);
+            }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(sch.date)) {
+              throw new Error(`تاريخ غير صالح: ${sch.date}، يجب أن يكون بصيغة YYYY-MM-DD`);
+            }
+            for (const empField of ['eveningemployee_1', 'eveningemployee_2', 'nightemployee_1']) {
+              if (sch[empField]) {
+                const { data: employee, error: empError } = await supabase
+                  .from('employees')
+                  .select('employeenumber')
+                  .eq('employeenumber', sch[empField])
+                  .single();
+                if (empError || !employee) {
+                  throw new Error(`رقم الموظف ${sch[empField]} غير موجود في جدول الموظفين`);
+                }
+              }
+            }
+          }
+          break;
+
+        case 'attendance':
+          table = 'attendance';
+          expectedHeaders = [
+            'رقم الموظف', 'تاريخ الحضور', 'وقت الدخول', 'وقت الخروج', 'الحالة', 'ملاحظات'
+          ];
+          dataToInsert = jsonData.map(row => ({
+            id: uuidv4(),
+            employeenumber: row['رقم الموظف']?.toString()?.trim() || '',
+            check_date: row['تاريخ الحضور']?.toString()?.trim() || '',
+            check_in_time: row['وقت الدخول']?.toString()?.trim() || null,
+            check_out_time: row['وقت الخروج']?.toString()?.trim() || null,
+            status: row['الحالة']?.toString()?.trim() || '',
+            notes: row['ملاحظات']?.toString()?.trim() || ''
+          }));
+          for (const att of dataToInsert) {
+            if (!att.employeenumber || !att.check_date) {
+              throw new Error(`بيانات غير مكتملة في السطر: رقم الموظف=${att.employeenumber || 'غير محدد'}، يجب توفير رقم الموظف وتاريخ الحضور`);
+            }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(att.check_date)) {
+              throw new Error(`تاريخ حضور غير صالح: ${att.check_date}، يجب أن يكون بصيغة YYYY-MM-DD`);
+            }
+            if (att.check_in_time && !/^\d{2}:\d{2}(:\d{2})?$/.test(att.check_in_time)) {
+              throw new Error(`وقت الدخول غير صالح: ${att.check_in_time}، يجب أن يكون بصيغة HH:MM أو HH:MM:SS`);
+            }
+            if (att.check_out_time && !/^\d{2}:\d{2}(:\d{2})?$/.test(att.check_out_time)) {
+              throw new Error(`وقت الخروج غير صالح: ${att.check_out_time}، يجب أن يكون بصيغة HH:MM أو HH:MM:SS`);
+            }
+            const { data: employee, error: empError } = await supabase
+              .from('employees')
+              .select('employeenumber')
+              .eq('employeenumber', att.employeenumber)
+              .single();
+            if (empError || !employee) {
+              throw new Error(`رقم الموظف ${att.employeenumber} غير موجود في جدول الموظفين`);
+            }
+          }
+          break;
+
+        default:
+          throw new Error('جدول غير معروف');
+      }
+
+      const receivedHeaders = Object.keys(jsonData[0]);
+      const missingHeaders = expectedHeaders.filter(h => !receivedHeaders.includes(h));
+      if (missingHeaders.length > 0) {
+        throw new Error(`أعمدة مفقودة في الملف: ${missingHeaders.join(', ')}`);
+      }
+
+      const { error: insertError } = await supabase
+        .from(table)
+        .upsert(table === 'employees' ? dataToInsert : dataToInsert, {
+          onConflict: table === 'employees' ? 'employeenumber' : undefined
+        });
+
+      if (insertError) {
+        throw new Error(`فشل في رفع البيانات: ${insertError.message}`);
+      }
+
+      setSuccess(`تم رفع ${dataToInsert.length} سجل بنجاح إلى جدول ${activeTab === 'employees' ? 'الموظفين' : activeTab === 'attendance' ? 'الحركات' : activeTab === 'schedule' ? 'الجداول' : activeTab === 'requests' ? 'الطلبات' : 'التقييمات'}!`);
+      setFile(null);
+      e.target.reset();
     } catch (err) {
-      setError(err.message || 'فشل في رفع البيانات');
-      console.error('Upload error:', err);
+      setError(err.message || 'فشل في معالجة الملف أو رفع البيانات');
+      console.error('Processing error:', err);
+    } finally {
       setLoading(false);
     }
   };
