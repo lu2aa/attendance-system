@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Link from 'next/link';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 export default function UploadEmployees({ supabaseClient }) {
   const [file, setFile] = useState(null);
